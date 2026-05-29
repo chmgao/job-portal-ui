@@ -1,21 +1,36 @@
 #!/bin/sh
-# Claude Code status line: model name + context usage with color-coded progress bar
+# Claude Code status line: model name, cwd, git branch, context usage with color-coded progress bar
 # Located in project: job-portal-ui/.claude/statusline.sh
 
 input=$(cat)
 
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // "unknown"')
 used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+
+# Git branch (skip lock files to avoid blocking)
+git_branch=$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ -z "$git_branch" ]; then
+  git_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+fi
 
 # ANSI color codes
 RESET="\033[0m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 RED="\033[31m"
+CYAN="\033[36m"
 BOLD="\033[1m"
+DIM="\033[2m"
 
 if [ -z "$used" ]; then
-  printf "${BOLD}%s${RESET}  [----------] awaiting first message" "$model"
+  if [ -n "$git_branch" ]; then
+    printf "${BOLD}${CYAN}%s${RESET}  ${DIM}%s${RESET}  ${BOLD}${CYAN}%s${RESET}  ${DIM}[--------------------]${RESET}  ${DIM}no messages yet${RESET}" \
+      "$model" "$cwd" "$git_branch"
+  else
+    printf "${BOLD}${CYAN}%s${RESET}  ${DIM}%s${RESET}  ${DIM}[--------------------]${RESET}  ${DIM}no messages yet${RESET}" \
+      "$model" "$cwd"
+  fi
   exit 0
 fi
 
@@ -30,11 +45,12 @@ empty=$(( BAR_WIDTH - filled ))
 bar=""
 i=0
 while [ $i -lt $filled ]; do
-  bar="${bar}#"
+  bar="${bar}█"
   i=$(( i + 1 ))
 done
-while [ $i -lt $BAR_WIDTH ]; do
-  bar="${bar}-"
+i=0
+while [ $i -lt $empty ]; do
+  bar="${bar}░"
   i=$(( i + 1 ))
 done
 
@@ -47,5 +63,10 @@ else
   BAR_COLOR="$GREEN"
 fi
 
-printf "${BOLD}%s${RESET}  ${BAR_COLOR}[%s]${RESET} %d%% used (%d%% remaining)" \
-  "$model" "$bar" "$used_int" "$remaining"
+if [ -n "$git_branch" ]; then
+  printf "${BOLD}${CYAN}%s${RESET}  ${DIM}%s${RESET}  ${BOLD}${CYAN}%s${RESET}  ${BAR_COLOR}%s${RESET}  ${BOLD}%d%%${RESET} ${DIM}used  %d%% left${RESET}" \
+    "$model" "$cwd" "$git_branch" "$bar" "$used_int" "$remaining"
+else
+  printf "${BOLD}${CYAN}%s${RESET}  ${DIM}%s${RESET}  ${BAR_COLOR}%s${RESET}  ${BOLD}%d%%${RESET} ${DIM}used  %d%% left${RESET}" \
+    "$model" "$cwd" "$bar" "$used_int" "$remaining"
+fi
